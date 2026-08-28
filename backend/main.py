@@ -1,6 +1,10 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
 from backend.core.config import settings
+from backend.core.limiter import limiter
 from backend.api import auth
 from backend.api.deps import get_current_user
 from backend.schemas.auth import TokenData
@@ -10,6 +14,10 @@ app = FastAPI(
     version="1.0.0",
     description="Aegis Autonomous Infrastructure Telemetry & Self-Healing API"
 )
+
+# Register SlowAPI Limiter state and Exception Handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,11 +30,13 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1")
 
 @app.get("/api/v1/health", tags=["Health"])
-async def health_check():
+@limiter.limit("10/minute")
+async def health_check(request: Request):
     return {"status": "online", "system": "Aegis Telemetry Engine"}
 
 @app.get("/api/v1/protected-test", tags=["Telemetry"])
-async def protected_test(current_user: TokenData = Depends(get_current_user)):
+@limiter.limit("20/minute")
+async def protected_test(request: Request, current_user: TokenData = Depends(get_current_user)):
     return {
         "message": "Access Granted to Telemetry Engine",
         "authenticated_user": current_user.username
