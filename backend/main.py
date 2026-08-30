@@ -1,3 +1,4 @@
+import asyncio # <-- NEW IMPORT
 from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -8,6 +9,7 @@ from backend.core.limiter import limiter
 from backend.api import auth
 from backend.api.deps import get_current_user
 from backend.schemas.auth import TokenData
+from backend.core.telemetry import metric_collector_thread # <-- NEW IMPORT
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -15,7 +17,6 @@ app = FastAPI(
     description="Aegis Autonomous Infrastructure Telemetry & Self-Healing API"
 )
 
-# Register SlowAPI Limiter state and Exception Handler
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -28,6 +29,13 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api/v1")
+
+# --- NEW STARTUP EVENT ---
+@app.on_event("startup")
+async def startup_event():
+    # Fire and forget the background polling task alongside the API
+    asyncio.create_task(metric_collector_thread())
+# -------------------------
 
 @app.get("/api/v1/health", tags=["Health"])
 @limiter.limit("10/minute")
