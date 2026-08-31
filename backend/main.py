@@ -1,17 +1,19 @@
 import asyncio
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+# Core & Configuration Imports
 from backend.core.config import settings
 from backend.core.limiter import limiter
 from backend.api import auth
 from backend.api.deps import get_current_user
 from backend.schemas.auth import TokenData
 
-# Import the collector thread AND the new ring buffer
+# Telemetry & WebSocket Imports
 from backend.core.telemetry import metric_collector_thread, telemetry_buffer
+from backend.core.ws_manager import manager
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -66,6 +68,25 @@ async def get_telemetry_buffer(request: Request, current_user: TokenData = Depen
     return {
         "buffer_capacity": 100,
         "current_size": len(telemetry_buffer),
-        # Convert the deque to a standard Python list so FastAPI can return it as JSON
         "metrics": list(telemetry_buffer) 
     }
+
+# --- DAY 14 ROUTE: REAL-TIME WEBSOCKET STREAMING ---
+@app.websocket("/ws/telemetry")
+async def websocket_telemetry_endpoint(websocket: WebSocket):
+    """
+    Day 14 Endpoint: Establishes a persistent, full-duplex WebSocket 
+    connection streaming live telemetry metrics every 3 seconds.
+    """
+    await manager.connect(websocket)
+    try:
+        while True:
+            payload = {
+                "event": "TELEMETRY_UPDATE",
+                "buffer_size": len(telemetry_buffer),
+                "data": list(telemetry_buffer)
+            }
+            await websocket.send_json(payload)
+            await asyncio.sleep(3)
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
