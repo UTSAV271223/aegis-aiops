@@ -1,5 +1,5 @@
 services:
-  # --- Existing Phase 1 Edge Tunnel ---
+  # --- Phase 1 Edge Tunnel ---
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: aegis-edge-tunnel
@@ -7,17 +7,17 @@ services:
     command: tunnel --url http://localhost:8000
     network_mode: host
 
-  # --- NEW: Phase 3 Docker Socket Proxy ---
+  # --- Phase 3 Hardened Docker Socket Proxy ---
   docker-proxy:
     image: tecnativa/docker-socket-proxy:latest
     container_name: aegis-socket-proxy
     restart: unless-stopped
     volumes:
-      # Mount the actual host socket as Read-Only (ro)
+      # Mount actual host socket as Read-Only (ro)
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      - CONTAINERS=1 # Allow GET requests for our telemetry engine to read stats
-      - POST=0       # Strictly block all state changes for now (Zero-Trust)
+      - CONTAINERS=1 # Allows container listing & telemetry reads
+      - RESTART=1    # Allows POST /containers/{id}/restart for self-healing
+      - POST=0       # Blocks ALL other POST operations (exec, create, build)
     ports:
-      # Expose only to the internal localhost on port 2375
       - "127.0.0.1:2375:2375"
