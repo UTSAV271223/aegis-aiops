@@ -3,6 +3,7 @@ import logging
 from collections import deque
 import docker
 from ai.anomaly import detect_anomaly
+from ai.rca import generate_root_cause_analysis
 
 logger = logging.getLogger("Aegis-Telemetry")
 logging.basicConfig(level=logging.INFO)
@@ -81,3 +82,36 @@ async def metric_collector_thread():
             logger.error(f"Telemetry collector loop error: {loop_err}")
             
         await asyncio.sleep(3)
+
+
+async def ml_inference_loop():
+    """
+    Day 18: Background worker that polls the ring buffer every 15 seconds.
+    If an anomaly is detected, it triggers the Groq LLM for predictive failure analysis.
+    """
+    logger.info("Starting 15-second ML inference loop for automated RCA...")
+    
+    while True:
+        try:
+            # Safely scan the current buffer for any metrics flagged as an anomaly
+            current_buffer = list(telemetry_buffer)
+            anomalies = [metric for metric in current_buffer if metric.get("is_anomaly") is True]
+
+            if anomalies:
+                # Grab the most recent anomaly to analyze
+                target = anomalies[-1]
+                logger.warning(f"[INFERENCE] Analyzing anomaly for {target['container_name']}...")
+                
+                # Execute predictive failure analysis via Groq
+                diagnosis = generate_root_cause_analysis(
+                    container_name=target['container_name'],
+                    cpu_percent=target['cpu_percent'],
+                    memory_percent=target['memory_percent']
+                )
+                
+                logger.info(f"\n[AI DIAGNOSIS - {target['container_name']}]\n{diagnosis}\n")
+                
+        except Exception as loop_err:
+            logger.error(f"ML Inference Loop Error: {loop_err}")
+            
+        await asyncio.sleep(15)

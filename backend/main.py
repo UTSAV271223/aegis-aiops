@@ -12,7 +12,7 @@ from api.deps import get_current_user
 from schemas.auth import TokenData
 
 # Telemetry & WebSocket Imports
-from core.telemetry import metric_collector_thread, telemetry_buffer
+from core.telemetry import metric_collector_thread, ml_inference_loop, telemetry_buffer
 from core.ws_manager import manager
 
 app = FastAPI(
@@ -42,6 +42,8 @@ app.include_router(auth.router, prefix="/api/v1")
 async def startup_event():
     # Launches the 3-second Docker SDK metric collector in the background
     asyncio.create_task(metric_collector_thread())
+    # Launches the 15-second ML inference loop for Groq RCA (Day 18)
+    asyncio.create_task(ml_inference_loop())
 # ---------------------
 
 # --- CORE ROUTES ---
