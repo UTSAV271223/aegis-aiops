@@ -1,76 +1,83 @@
-import docker
 import asyncio
 import logging
 from collections import deque
-from datetime import datetime, timezone
+import docker
+from ai.anomaly import detect_anomaly
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger("Aegis-Telemetry")
+logging.basicConfig(level=logging.INFO)
 
-# 1. Initialize the Sliding Window Ring Buffer (Max 100 entries)
+# In-memory ring buffer (Capacity: 100 metrics)
 telemetry_buffer = deque(maxlen=100)
 
-# 2. Day 15 Hardening: Connect via Tecnativa Docker Socket Proxy (TCP 2375)
-try:
-    docker_client = docker.DockerClient(base_url="tcp://127.0.0.1:2375")
-except Exception as e:
-    logger.error(f"Failed to connect to Docker Socket Proxy: {e}")
-    docker_client = None
-
-def fetch_docker_stats():
-    """Synchronous helper function to poll Docker stats through the proxy."""
-    if not docker_client:
-        return []
-        
-    stats_list = []
-    try:
-        containers = docker_client.containers.list(filters={"status": "running"})
-        for container in containers:
-            stats = container.stats(stream=False)
-            
-            mem_stats = stats.get("memory_stats", {})
-            mem_usage = mem_stats.get("usage", 0)
-            mem_limit = mem_stats.get("limit", 1) 
-            mem_percent = round((mem_usage / mem_limit) * 100, 2) if mem_limit > 0 else 0.0
-            
-            payload = {
-                "container_id": container.short_id,
-                "container_name": container.name,
-                "memory_usage_mb": round(mem_usage / (1024 * 1024), 2),
-                "memory_percent": mem_percent,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            stats_list.append(payload)
-    except Exception as e:
-        logger.error(f"Docker Proxy API Error: {e}")
-        
-    return stats_list
-
 async def metric_collector_thread():
-    """Asynchronous background loop executed by FastAPI during application startup."""
-    if not docker_client:
-        logger.error("Docker Proxy client unavailable. Telemetry polling halted.")
-        return
-
+    """
+    Background worker that polls Docker socket via Docker SDK every 3 seconds,
+    runs anomaly detection, and buffers the structured telemetry payload.
+    """
     logger.info("Starting Aegis telemetry engine via Docker Socket Proxy (3s interval)...")
     
+    # Connect via Docker socket proxy/environment
+    try:
+        client = docker.from_env()
+    except Exception as e:
+        logger.error(f"Failed to initialize Docker client: {e}")
+        return
+
     while True:
         try:
-            # Offload synchronous Docker SDK calls to a worker thread to keep FastAPI responsive
-            current_stats = await asyncio.to_thread(fetch_docker_stats)
+            containers = client.containers.list()
+            for container in containers:
+                try:
+                    stats = container.stats(stream=False)
+                    
+                    # Calculate CPU percentage safely from Docker stats raw structures
+                    cpu_stats = stats.get("cpu_stats", {})
+                    precpu_stats = stats.get("precpu_stats", {})
+                    
+                    cpu_delta = cpu_stats.get("cpu_usage", {}).get("total_usage", 0) - precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+                    system_delta = cpu_stats.get("system_cpu_usage", 0) - precpu_stats.get("system_cpu_usage", 0)
+                    num_cpus = cpu_stats.get("online_cpus", 1)
+                    
+                    cpu_percent = 0.0
+                    if system_delta > 0 and cpu_delta > 0:
+                        cpu_percent = (cpu_delta / system_delta) * num_cpus * 100.0
+
+                    # Calculate Memory usage
+                    memory_stats = stats.get("memory_stats", {})
+                    mem_usage = memory_stats.get("usage", 0)
+                    mem_limit = memory_stats.get("limit", 1)
+                    memory_percent = (mem_usage / mem_limit) * 100.0
+                    memory_usage_mb = mem_usage / (1024 * 1024)
+
+                    # --- DAY 17 AI ANOMALY DETECTION HOOK ---
+                    is_anomaly = detect_anomaly(
+                        cpu_percent=round(cpu_percent, 2),
+                        memory_percent=round(memory_percent, 2),
+                        memory_usage_mb=round(memory_usage_mb, 2)
+                    )
+                    # ----------------------------------------
+
+                    metric_payload = {
+                        "container_id": container.id[:12],
+                        "container_name": container.name,
+                        "cpu_percent": round(cpu_percent, 2),
+                        "memory_percent": round(memory_percent, 2),
+                        "memory_usage_mb": round(memory_usage_mb, 2),
+                        "is_anomaly": is_anomaly
+                    }
+
+                    telemetry_buffer.append(metric_payload)
+                    
+                    if is_anomaly:
+                        logger.warning(f"[ANOMALY DETECTED] Container {container.name} flagged by Isolation Forest!")
+                    else:
+                        logger.info(f"[BUFFERED] {container.name} | Mem: {round(memory_percent, 2)}% | Size: {len(telemetry_buffer)}/100")
+
+                except Exception as container_err:
+                    logger.error(f"Error parsing stats for container {container.name}: {container_err}")
+                    
+        except Exception as loop_err:
+            logger.error(f"Telemetry collector loop error: {loop_err}")
             
-            for payload in current_stats:
-                telemetry_buffer.append(payload)
-                logger.info(
-                    f"[BUFFERED] {payload['container_name']} | "
-                    f"Mem: {payload['memory_percent']}% | "
-                    f"Size: {len(telemetry_buffer)}/100"
-                )
-        except Exception as e:
-            logger.error(f"Telemetry Task Error: {e}")
-        
         await asyncio.sleep(3)

@@ -5,15 +5,15 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 # Core & Configuration Imports
-from backend.core.config import settings
-from backend.core.limiter import limiter
-from backend.api import auth
-from backend.api.deps import get_current_user
-from backend.schemas.auth import TokenData
+from core.config import settings
+from core.limiter import limiter
+from api import auth
+from api.deps import get_current_user
+from schemas.auth import TokenData
 
 # Telemetry & WebSocket Imports
-from backend.core.telemetry import metric_collector_thread, telemetry_buffer
-from backend.core.ws_manager import manager
+from core.telemetry import metric_collector_thread, telemetry_buffer
+from core.ws_manager import manager
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
