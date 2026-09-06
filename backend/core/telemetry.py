@@ -1,3 +1,4 @@
+import json
 import asyncio
 import logging
 from collections import deque
@@ -134,7 +135,11 @@ async def metric_collector_thread():
                                     memory_percent=round(memory_percent, 2),
                                     log_payload=compressed_logs
                                 )
-                                logger.info(f"\n[AI DIAGNOSIS - {container.name}]\n{diagnosis}\n")
+                                
+                                # --- DAY 20 JSON FORMATTING ---
+                                formatted_json = json.dumps(diagnosis, indent=2)
+                                logger.info(f"\n[AI DIAGNOSIS - {container.name}]\n{formatted_json}\n")
+                                # ------------------------------
                                 
                         except Exception as log_err:
                             logger.error(f"Failed to fetch or analyze logs for container {container.name}: {log_err}")
@@ -177,7 +182,10 @@ async def ml_inference_loop():
                     log_payload="Periodic buffer fallback inspection."
                 )
                 
-                logger.info(f"\n[AI DIAGNOSIS - {target['container_name']}]\n{diagnosis}\n")
+                # --- DAY 20 JSON FORMATTING ---
+                formatted_json = json.dumps(diagnosis, indent=2)
+                logger.info(f"\n[AI DIAGNOSIS - {target['container_name']}]\n{formatted_json}\n")
+                # ------------------------------
                 
         except Exception as loop_err:
             logger.error(f"ML Inference Loop Error: {loop_err}")
