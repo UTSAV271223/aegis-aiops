@@ -1,3 +1,19 @@
+'use client';
+
+import dynamic from 'next/dynamic';
+
+// Dynamic import with SSR disabled for 3D WebGL Canvas
+const TopologyMesh = dynamic(() => import('@/components/TopologyMesh'), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center h-full">
+      <p className="text-cyan-400 font-mono text-sm animate-pulse">
+        Initializing 3D Topology Canvas...
+      </p>
+    </div>
+  ),
+});
+
 export default function CommandCenter() {
   return (
     <main className="flex min-h-screen flex-col p-4 bg-neutral-950">
@@ -12,7 +28,6 @@ export default function CommandCenter() {
         </div>
         
         <div className="flex gap-4 items-center">
-          {/* Day 25: Buttons will go here */}
           <div className="text-xs font-mono text-neutral-500 border border-neutral-800 px-3 py-1 rounded bg-black/50">
             [Chaos Sandbox Panel Offline]
           </div>
@@ -22,12 +37,15 @@ export default function CommandCenter() {
       {/* MAIN VIEWPORT */}
       <div className="flex flex-1 gap-4 h-full relative">
         
-        {/* LEFT: 3D Topology Map Placeholder (Day 23) */}
-        <section className="glass-panel flex-1 flex flex-col items-center justify-center relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-neutral-900/40 via-neutral-950 to-neutral-950 -z-10"></div>
-          <p className="text-neutral-500 font-mono animate-pulse">
-            [ React Three Fiber Mesh Rendering Offline ]
-          </p>
+        {/* LEFT: 3D Topology Mesh Map */}
+        <section className="glass-panel flex-1 flex flex-col relative overflow-hidden min-h-[500px]">
+          <div className="absolute top-3 left-4 z-10 flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-ping" />
+            <span className="text-xs font-mono text-neutral-400 uppercase tracking-wider">
+              3D Infrastructure Topology
+            </span>
+          </div>
+          <TopologyMesh />
         </section>
 
         {/* RIGHT: Telemetry & Alert Stream Placeholder */}
