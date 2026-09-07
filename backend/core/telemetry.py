@@ -6,6 +6,7 @@ import time
 import docker
 from ai.anomaly import detect_anomaly
 from ai.rca import generate_root_cause_analysis
+from core.healing import execute_self_healing
 
 logger = logging.getLogger("Aegis-Telemetry")
 logging.basicConfig(level=logging.INFO)
@@ -140,6 +141,17 @@ async def metric_collector_thread():
                                 formatted_json = json.dumps(diagnosis, indent=2)
                                 logger.info(f"\n[AI DIAGNOSIS - {container.name}]\n{formatted_json}\n")
                                 # ------------------------------
+
+                                # --- DAY 21 SELF-HEALING ENGINE HOOK ---
+                                requires_restart = diagnosis.get("requires_restart", False) if isinstance(diagnosis, dict) else False
+                                healing_result = await asyncio.to_thread(
+                                    execute_self_healing,
+                                    container_name=container.name,
+                                    requires_restart=requires_restart
+                                )
+                                formatted_healing = json.dumps(healing_result, indent=2)
+                                logger.info(f"\n[SELF-HEALING ACTION - {container.name}]\n{formatted_healing}\n")
+                                # ---------------------------------------
                                 
                         except Exception as log_err:
                             logger.error(f"Failed to fetch or analyze logs for container {container.name}: {log_err}")
@@ -158,8 +170,8 @@ async def metric_collector_thread():
 
 async def ml_inference_loop():
     """
-    Day 18/19: Background worker that polls the ring buffer every 15 seconds.
-    If an anomaly is detected, it triggers the Groq LLM for periodic fallback analysis.
+    Day 18/19/21: Background worker that polls the ring buffer every 15 seconds.
+    If an anomaly is detected, it triggers Groq LLM and dispatches self-healing recovery.
     """
     logger.info("Starting 15-second ML inference loop for automated RCA...")
     
@@ -186,6 +198,17 @@ async def ml_inference_loop():
                 formatted_json = json.dumps(diagnosis, indent=2)
                 logger.info(f"\n[AI DIAGNOSIS - {target['container_name']}]\n{formatted_json}\n")
                 # ------------------------------
+
+                # --- DAY 21 SELF-HEALING ENGINE HOOK ---
+                requires_restart = diagnosis.get("requires_restart", False) if isinstance(diagnosis, dict) else False
+                healing_result = await asyncio.to_thread(
+                    execute_self_healing,
+                    container_name=target['container_name'],
+                    requires_restart=requires_restart
+                )
+                formatted_healing = json.dumps(healing_result, indent=2)
+                logger.info(f"\n[SELF-HEALING ACTION - {target['container_name']}]\n{formatted_healing}\n")
+                # ---------------------------------------
                 
         except Exception as loop_err:
             logger.error(f"ML Inference Loop Error: {loop_err}")

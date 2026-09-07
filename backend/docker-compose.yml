@@ -13,11 +13,10 @@ services:
     container_name: aegis-socket-proxy
     restart: unless-stopped
     volumes:
-      # Mount actual host socket as Read-Only (ro)
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Removed ':ro' to grant the proxy write access for restart commands
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - CONTAINERS=1 # Allows container listing & telemetry reads
-      - RESTART=1    # Allows POST /containers/{id}/restart for self-healing
-      - POST=0       # Blocks ALL other POST operations (exec, create, build)
+      - POST=1       # REQUIRED: Allows POST requests (restarts)
     ports:
       - "127.0.0.1:2375:2375"
