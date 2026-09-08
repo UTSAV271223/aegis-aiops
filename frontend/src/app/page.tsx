@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useTelemetry } from '@/hooks/useTelemetry';
+import ChaosSandbox from '@/components/ChaosSandbox'; // <-- Import the new ChaosSandbox component
 
 // Dynamic import with SSR disabled for 3D WebGL Canvas
 const TopologyMesh = dynamic(() => import('@/components/TopologyMesh'), {
@@ -22,7 +23,7 @@ export default function CommandCenter() {
   return (
     <main className="flex min-h-screen flex-col p-4 bg-neutral-950">
       
-      {/* HEADER: Recruiter Chaos Sandbox Placeholder */}
+      {/* HEADER: Recruiter Chaos Sandbox Active Panel */}
       <header className="glass-panel flex justify-between items-center p-4 mb-4 h-20 w-full z-10">
         <div>
           <h1 className="text-2xl font-bold tracking-widest text-cyan-400 drop-shadow-md">
@@ -31,11 +32,8 @@ export default function CommandCenter() {
           <p className="text-xs text-neutral-400 uppercase tracking-widest">Command Center</p>
         </div>
         
-        <div className="flex gap-4 items-center">
-          <div className="text-xs font-mono text-neutral-500 border border-neutral-800 px-3 py-1 rounded bg-black/50">
-            [Chaos Sandbox Panel Offline]
-          </div>
-        </div>
+        {/* Render the Interactive Chaos Sandbox */}
+        <ChaosSandbox />
       </header>
 
       {/* MAIN VIEWPORT */}
