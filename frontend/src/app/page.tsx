@@ -1,6 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import { useTelemetry } from '@/hooks/useTelemetry';
 
 // Dynamic import with SSR disabled for 3D WebGL Canvas
 const TopologyMesh = dynamic(() => import('@/components/TopologyMesh'), {
@@ -15,6 +16,9 @@ const TopologyMesh = dynamic(() => import('@/components/TopologyMesh'), {
 });
 
 export default function CommandCenter() {
+  // Initialize the live WebSocket ref for non-blocking UI telemetry updates
+  const nodeStatusesRef = useTelemetry();
+
   return (
     <main className="flex min-h-screen flex-col p-4 bg-neutral-950">
       
@@ -45,7 +49,7 @@ export default function CommandCenter() {
               3D Infrastructure Topology
             </span>
           </div>
-          <TopologyMesh />
+          <TopologyMesh statusRef={nodeStatusesRef} />
         </section>
 
         {/* RIGHT: Telemetry & Alert Stream Placeholder */}
