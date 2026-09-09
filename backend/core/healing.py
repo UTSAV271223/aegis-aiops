@@ -1,5 +1,6 @@
 import time
 import logging
+import os
 import docker
 
 logger = logging.getLogger("Aegis-Healing")
@@ -40,9 +41,10 @@ def execute_self_healing(container_name: str, requires_restart: bool) -> dict:
             "escalation": "CRITICAL_HUMAN_REQUIRED"
         }
 
-    # Execute container restart over Docker Socket Proxy (TCP Port 2375)
+    # Execute container restart over Docker Socket Proxy (Dynamic Host Resolution)
     try:
-        client = docker.DockerClient(base_url="tcp://127.0.0.1:2375")
+        docker_host = os.getenv("DOCKER_HOST", "tcp://aegis-socket-proxy:2375")
+        client = docker.DockerClient(base_url=docker_host)
         container = client.containers.get(container_name)
 
         next_strike = record["strikes"] + 1

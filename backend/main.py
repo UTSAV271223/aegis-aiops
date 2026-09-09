@@ -1,94 +1,218 @@
+import os
+from contextlib import asynccontextmanager
+from typing import Any
+
 import asyncio
-from fastapi import FastAPI, Depends, Request, WebSocket, WebSocketDisconnect
+
+from fastapi import (
+    Depends,
+    FastAPI,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-# Core & Configuration Imports
+from api import auth
+from api import chaos
+from api.deps import get_current_user
 from core.config import settings
 from core.limiter import limiter
-from api import auth
-from api.deps import get_current_user
+from core.telemetry import (
+    build_latest_snapshot,
+    cancel_incident_tasks,
+    metric_collector_thread,
+    ml_inference_loop,
+    telemetry_buffer,
+)
+from core.ws_manager import manager
 from schemas.auth import TokenData
 
-# Telemetry & WebSocket Imports
-from core.telemetry import metric_collector_thread, ml_inference_loop, telemetry_buffer
-from core.ws_manager import manager
+
+def _get_allowed_origins() -> list[str]:
+    raw_origins = os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    )
+
+    return [
+        origin.strip()
+        for origin in raw_origins.split(",")
+        if origin.strip()
+    ]
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+
+    metric_task = asyncio.create_task(
+        metric_collector_thread()
+    )
+
+    ml_task = asyncio.create_task(
+        ml_inference_loop()
+    )
+
+    try:
+        yield
+
+    finally:
+
+        cancel_incident_tasks()
+
+        metric_task.cancel()
+        ml_task.cancel()
+
+        await asyncio.gather(
+            metric_task,
+            ml_task,
+            return_exceptions=True,
+        )
+
 
 app = FastAPI(
-    title=settings.PROJECT_NAME,
+    title=getattr(
+        settings,
+        "PROJECT_NAME",
+        "Aegis AIOps",
+    ),
     version="1.0.0",
-    description="Aegis Autonomous Infrastructure Telemetry & Self-Healing API"
+    description=(
+        "Aegis Autonomous Infrastructure "
+        "Telemetry & Self-Healing API"
+    ),
+    lifespan=lifespan,
 )
 
-# Attach SlowAPI Rate Limiter
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Configure CORS for Vercel Frontend communication
+# ============================================================
+# RATE LIMITING
+# ============================================================
+
+app.state.limiter = limiter
+
+app.add_exception_handler(
+    RateLimitExceeded,
+    _rate_limit_exceeded_handler,
+)
+
+
+# ============================================================
+# CORS
+# ============================================================
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_get_allowed_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Register Authentication Router
-app.include_router(auth.router, prefix="/api/v1")
 
-# --- STARTUP EVENT ---
-@app.on_event("startup")
-async def startup_event():
-    # Launches the 3-second Docker SDK metric collector in the background
-    asyncio.create_task(metric_collector_thread())
-    # Launches the 15-second ML inference loop for Groq RCA (Day 18)
-    asyncio.create_task(ml_inference_loop())
-# ---------------------
+# ============================================================
+# ROUTERS
+# ============================================================
 
-# --- CORE ROUTES ---
-@app.get("/api/v1/health", tags=["Health"])
+app.include_router(
+    auth.router,
+    prefix="/api/v1",
+)
+
+app.include_router(
+    chaos.router,
+    prefix="/api/v1/chaos",
+    tags=["Chaos"],
+)
+
+
+# ============================================================
+# HEALTH
+# ============================================================
+
+@app.get(
+    "/api/v1/health",
+    tags=["Health"],
+)
 @limiter.limit("10/minute")
-async def health_check(request: Request):
-    return {"status": "online", "system": "Aegis Telemetry Engine"}
+async def health_check(
+    request: Request,
+) -> dict[str, str]:
 
-@app.get("/api/v1/protected-test", tags=["Telemetry"])
-@limiter.limit("20/minute")
-async def protected_test(request: Request, current_user: TokenData = Depends(get_current_user)):
     return {
-        "message": "Access Granted to Telemetry Engine",
-        "authenticated_user": current_user.username
+        "status": "online",
+        "system": "Aegis Telemetry Engine",
     }
 
-# --- DAY 13 ROUTE ---
-@app.get("/api/v1/telemetry/buffer", tags=["Telemetry"])
+
+# ============================================================
+# TELEMETRY BUFFER
+# ============================================================
+
+@app.get(
+    "/api/v1/telemetry/buffer",
+    tags=["Telemetry"],
+)
 @limiter.limit("30/minute")
-async def get_telemetry_buffer(request: Request, current_user: TokenData = Depends(get_current_user)):
-    """
-    Day 13 Verification Route: Inspects the in-memory ring buffer.
-    """
+async def get_telemetry_buffer(
+    request: Request,
+    current_user: TokenData = Depends(
+        get_current_user
+    ),
+) -> dict[str, Any]:
+
     return {
-        "buffer_capacity": 100,
-        "current_size": len(telemetry_buffer),
-        "metrics": list(telemetry_buffer) 
+        "buffer_capacity": telemetry_buffer.maxlen,
+        "current_size": len(
+            telemetry_buffer
+        ),
+        "metrics": list(
+            telemetry_buffer
+        ),
     }
 
-# --- DAY 14 ROUTE: REAL-TIME WEBSOCKET STREAMING ---
+
+# ============================================================
+# WEBSOCKET TELEMETRY
+# ============================================================
+
 @app.websocket("/ws/telemetry")
-async def websocket_telemetry_endpoint(websocket: WebSocket):
-    """
-    Day 14 Endpoint: Establishes a persistent, full-duplex WebSocket 
-    connection streaming live telemetry metrics every 3 seconds.
-    """
+async def websocket_telemetry_endpoint(
+    websocket: WebSocket,
+):
+
     await manager.connect(websocket)
+
     try:
-        while True:
-            payload = {
+
+        # Send current state immediately.
+        snapshot = build_latest_snapshot()
+
+        if snapshot:
+
+            await websocket.send_json({
                 "event": "TELEMETRY_UPDATE",
-                "buffer_size": len(telemetry_buffer),
-                "data": list(telemetry_buffer)
-            }
-            await websocket.send_json(payload)
-            await asyncio.sleep(3)
+                "buffer_size": len(
+                    telemetry_buffer
+                ),
+                "data": snapshot,
+            })
+
+        # Keep the connection alive and allow FastAPI to
+        # detect browser disconnects.
+        while True:
+            await websocket.receive_text()
+
     except WebSocketDisconnect:
+
         manager.disconnect(websocket)
+
+    except Exception as error:
+
+        manager.disconnect(websocket)
+
+        print(
+            f"[WebSocket] Connection closed: {error}"
+        )

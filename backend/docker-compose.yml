@@ -4,8 +4,11 @@ services:
     image: cloudflare/cloudflared:latest
     container_name: aegis-edge-tunnel
     restart: unless-stopped
-    command: tunnel --url http://localhost:8000
-    network_mode: host
+    command: tunnel --no-autoupdate --url http://aegis-api:8000
+    depends_on:
+      - aegis-api
+    networks:
+      - aegis-net
 
   # --- Phase 3 Hardened Docker Socket Proxy ---
   docker-proxy:
@@ -13,10 +16,38 @@ services:
     container_name: aegis-socket-proxy
     restart: unless-stopped
     volumes:
-      # Removed ':ro' to grant the proxy write access for restart commands
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - CONTAINERS=1 # Allows container listing & telemetry reads
-      - POST=1       # REQUIRED: Allows POST requests (restarts)
+      - CONTAINERS=1 # Container listing & telemetry reads
+      - POST=1       # Required for POST restarts/self-healing
+      - INFO=1       # System stats
+      - EVENTS=1     # Real-time event monitoring
+      - LOGS=1       # Log stream access for AI Root Cause Analysis
+      - PING=1       # Socket proxy health checks
     ports:
       - "127.0.0.1:2375:2375"
+    networks:
+      - aegis-net
+
+  # --- Aegis Main FastAPI Backend ---
+  aegis-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: aegis-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - DOCKER_HOST=tcp://docker-proxy:2375
+    volumes:
+      - .:/app
+    depends_on:
+      - docker-proxy
+    networks:
+      - aegis-net
+
+networks:
+  aegis-net:
+    driver: bridge
