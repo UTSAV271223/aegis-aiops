@@ -1,111 +1,148 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text, Float, Line } from '@react-three/drei';
 import * as THREE from 'three';
 
-// Defined node coordinates in 3D space
+type NodeStatus = 'HEALTHY' | 'ANOMALY' | 'RECOVERING' | 'DOWN';
+
+type StatusRef = React.MutableRefObject<Record<string, NodeStatus>>;
+
+/* ============================================================
+   FIXED TOPOLOGY NODES & BASE COLORS
+============================================================ */
 const NODES = [
-  { id: 'aegis-edge-tunnel', name: 'aegis-edge-tunnel', pos: [-3, 1, 0], color: '#06b6d4' },
-  { id: 'sentinelflow_control_plane', name: 'sentinelflow_control_plane', pos: [0, 2, -1], color: '#10b981' },
-  { id: 'aegis-socket-proxy', name: 'aegis-socket-proxy', pos: [3, 1, 0], color: '#3b82f6' },
-  { id: 'groq-llm-engine', name: 'groq-llm-engine', pos: [-2, -2, 1], color: '#a855f7' },
-  { id: 'supabase-postgres', name: 'supabase-postgres', pos: [2, -2, 1], color: '#f59e0b' },
+  {
+    id: 'aegis-edge-tunnel',
+    name: 'aegis-edge-tunnel',
+    position: [-3, 1, 0] as [number, number, number],
+    color: '#06b6d4', // Cyan
+  },
+  {
+    id: 'sentinelflow_control_plane',
+    name: 'sentinelflow_control_plane',
+    position: [0, 2, -1] as [number, number, number],
+    color: '#10b981', // Emerald Green
+  },
+  {
+    id: 'aegis-socket-proxy',
+    name: 'aegis-socket-proxy',
+    position: [3, 1, 0] as [number, number, number],
+    color: '#3b82f6', // Vibrant Blue
+  },
+  {
+    id: 'groq-llm-engine',
+    name: 'groq-llm-engine',
+    position: [-2, -2, 1] as [number, number, number],
+    color: '#a855f7', // Purple
+  },
+  {
+    id: 'supabase-postgres',
+    name: 'supabase-postgres',
+    position: [2, -2, 1] as [number, number, number],
+    color: '#f59e0b', // Amber / Yellow
+  },
 ];
 
-// Node-to-node topology connections
-const CONNECTIONS: [number, number][] = [
-  [0, 1], // Edge Tunnel -> Control Plane
-  [1, 2], // Control Plane -> Socket Proxy
-  [1, 3], // Control Plane -> Groq LLM
-  [1, 4], // Control Plane -> Supabase DB
-];
+/* ============================================================
+   NETWORK CONNECTIONS
+============================================================ */
+const CONNECTIONS = [
+  [0, 1],
+  [1, 2],
+  [1, 3],
+  [1, 4],
+] as const;
 
-// Global status colors for anomalies/recovery
-const STATUS_COLORS = {
-  anomaly: new THREE.Color('#ef4444'),    // Red
-  recovering: new THREE.Color('#f59e0b'), // Amber
-  down: new THREE.Color('#78716c'),       // Gray
-};
+/* ============================================================
+   DYNAMIC STATUS OVERRIDE COLORS
+============================================================ */
+const ANOMALY_COLOR = new THREE.Color('#ef4444');
+const RECOVERING_COLOR = new THREE.Color('#f59e0b');
+const DOWN_COLOR = new THREE.Color('#78716c');
 
+/* ============================================================
+   NODE COMPONENT
+============================================================ */
 interface NodeMeshProps {
   id: string;
   name: string;
-  pos: [number, number, number];
-  color: string;
-  statusRef?: React.MutableRefObject<any>;
+  position: [number, number, number];
+  baseColor: string;
+  statusRef?: StatusRef;
 }
 
-function NodeMesh({ id, name, pos, color, statusRef }: NodeMeshProps) {
-  const groupRef = useRef<THREE.Group>(null);
-  
-  // Create refs for the specific materials we want to mutate
-  const innerMaterialRef = useRef<THREE.MeshStandardMaterial>(null);
+function NodeMesh({ id, name, position, baseColor, statusRef }: NodeMeshProps) {
+  // Separate ref for wireframe rotation so text stays facing forward
+  const meshGroupRef = useRef<THREE.Group>(null);
+  const materialRef = useRef<THREE.MeshBasicMaterial>(null);
   const outerMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
 
-  // Memoize the original base color so we don't recreate it every frame
-  const baseColor = useMemo(() => new THREE.Color(color), [color]);
+  const originalColor = useMemo(() => new THREE.Color(baseColor), [baseColor]);
 
-  useFrame((state, delta) => {
-    // Subtle rotation pulse for interactive polish
-    if (groupRef.current) {
-      groupRef.current.rotation.y += delta * 0.5;
+  useFrame((_state, delta) => {
+    // Only rotate the inner wireframe geometry
+    if (meshGroupRef.current) {
+      meshGroupRef.current.rotation.y += delta * 0.35;
     }
 
-    // Direct GPU color manipulation via WebSocket status tracking
-    if (statusRef?.current && innerMaterialRef.current && outerMaterialRef.current) {
-      const currentStatus = statusRef.current[id] || 'healthy';
-      
-      // Determine the target color (fallback to original base color if healthy)
-      let targetColor = baseColor;
-      if (currentStatus !== 'healthy' && STATUS_COLORS[currentStatus as keyof typeof STATUS_COLORS]) {
-        targetColor = STATUS_COLORS[currentStatus as keyof typeof STATUS_COLORS];
-      }
-
-      // .lerp() creates a smooth transition between the current color and target color
-      innerMaterialRef.current.color.lerp(targetColor, 0.05);
-      innerMaterialRef.current.emissive.lerp(targetColor, 0.05);
-      outerMaterialRef.current.color.lerp(targetColor, 0.05);
+    if (!statusRef?.current || !materialRef.current || !outerMaterialRef.current) {
+      return;
     }
+
+    const status = statusRef.current[id] ?? 'HEALTHY';
+    let targetColor = originalColor;
+
+    if (status === 'ANOMALY') {
+      targetColor = ANOMALY_COLOR;
+    } else if (status === 'RECOVERING') {
+      targetColor = RECOVERING_COLOR;
+    } else if (status === 'DOWN') {
+      targetColor = DOWN_COLOR;
+    }
+
+    materialRef.current.color.lerp(targetColor, 0.08);
+    outerMaterialRef.current.color.lerp(targetColor, 0.08);
   });
 
   return (
-    <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-      <group position={pos} ref={groupRef}>
-        {/* Core Glowing Sphere */}
-        <mesh>
-          <icosahedronGeometry args={[0.5, 2]} />
-          <meshStandardMaterial
-            ref={innerMaterialRef}
-            color={baseColor}
-            emissive={baseColor}
-            emissiveIntensity={0.6}
-            roughness={0.2}
-            wireframe
-          />
-        </mesh>
+    <Float speed={1.5} rotationIntensity={0.2} floatIntensity={0.3}>
+      <group position={position}>
+        {/* ROTATING WIREFRAME MESHES */}
+        <group ref={meshGroupRef}>
+          {/* CORE */}
+          <mesh>
+            <icosahedronGeometry args={[0.5, 2]} />
+            <meshBasicMaterial
+              ref={materialRef}
+              color={originalColor}
+              wireframe
+              transparent
+              opacity={0.95}
+            />
+          </mesh>
 
-        {/* Outer Wireframe Ring */}
-        <mesh>
-          <sphereGeometry args={[0.65, 16, 16]} />
-          <meshBasicMaterial 
-            ref={outerMaterialRef} 
-            color={baseColor} 
-            wireframe 
-            transparent 
-            opacity={0.15} 
-          />
-        </mesh>
+          {/* OUTER GLOW */}
+          <mesh>
+            <sphereGeometry args={[0.68, 24, 24]} />
+            <meshBasicMaterial
+              ref={outerMaterialRef}
+              color={originalColor}
+              wireframe
+              transparent
+              opacity={0.14}
+            />
+          </mesh>
+        </group>
 
-        {/* 3D Floating Text Label */}
+        {/* STATIC FRONT-FACING LABEL */}
         <Text
-          position={[0, -0.9, 0]}
-          fontSize={0.25}
+          position={[0, -0.95, 0]}
+          fontSize={0.24}
           color="#e5e5e5"
           anchorX="center"
           anchorY="middle"
-          font="https://fonts.gstatic.com/s/roboto/v18/KFOmCnqEu92Fr1Mu4mxM.woff"
         >
           {name}
         </Text>
@@ -114,42 +151,68 @@ function NodeMesh({ id, name, pos, color, statusRef }: NodeMeshProps) {
   );
 }
 
-// Ensure the parent accepts statusRef and passes it down
-export default function TopologyMesh({ statusRef }: { statusRef?: React.MutableRefObject<any> }) {
-  return (
-    <div className="w-full h-full min-h-[450px]">
-      <Canvas camera={{ position: [0, 0, 8], fov: 50 }}>
-        <color attach="background" args={['#0a0a0a']} />
-        <ambientLight intensity={0.5} />
-        <pointLight position={[10, 10, 10]} intensity={1} color="#ffffff" />
-        <pointLight position={[-10, -10, -10]} intensity={0.5} color="#06b6d4" />
+/* ============================================================
+   TOPOLOGY CANVAS
+============================================================ */
+interface TopologyMeshProps {
+  statusRef?: StatusRef;
+}
 
-        {/* Render 3D Topology Nodes */}
+export default function TopologyMesh({ statusRef }: TopologyMeshProps) {
+  const connectionPoints = useMemo(
+    () =>
+      CONNECTIONS.map(([start, end]) => [
+        new THREE.Vector3(...NODES[start].position),
+        new THREE.Vector3(...NODES[end].position),
+      ]),
+    []
+  );
+
+  return (
+    <div className="w-full h-full min-h-[500px]">
+      <Canvas
+        dpr={[1, 1.5]}
+        camera={{
+          position: [0, 0, 9],
+          fov: 48,
+          near: 0.1,
+          far: 100,
+        }}
+      >
+        <color attach="background" args={['#0a0a0a']} />
+        <ambientLight intensity={0.7} />
+        <pointLight position={[5, 5, 5]} intensity={1} />
+
+        {/* NODES */}
         {NODES.map((node) => (
           <NodeMesh
             key={node.id}
-            id={node.id} // Passed ID to match telemetry payload
+            id={node.id}
             name={node.name}
-            pos={node.pos as [number, number, number]}
-            color={node.color}
-            statusRef={statusRef} // Pass down the live ref
+            position={node.position}
+            baseColor={node.color}
+            statusRef={statusRef}
           />
         ))}
 
-        {/* Render Interconnecting Network Lines */}
-        {CONNECTIONS.map(([startIdx, endIdx], idx) => (
+        {/* NETWORK CONNECTIONS */}
+        {connectionPoints.map(([start, end], index) => (
           <Line
-            key={idx}
-            points={[NODES[startIdx].pos, NODES[endIdx].pos]}
+            key={`connection-${index}`}
+            points={[start, end]}
             color="#334155"
-            lineWidth={1.5}
-            dashed
-            dashScale={10}
+            lineWidth={1}
           />
         ))}
 
-        {/* Interactive Mouse Rotation and Zoom */}
-        <OrbitControls enableZoom enableRotate maxDistance={15} minDistance={4} />
+        <OrbitControls
+          enableZoom
+          enableRotate
+          enablePan
+          minDistance={5}
+          maxDistance={15}
+          target={[0, 0, 0]}
+        />
       </Canvas>
     </div>
   );
