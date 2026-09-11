@@ -18,12 +18,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - CONTAINERS=1 # Container listing & telemetry reads
-      - POST=1       # Required for POST restarts/self-healing
-      - INFO=1       # System stats
-      - EVENTS=1     # Real-time event monitoring
-      - LOGS=1       # Log stream access for AI Root Cause Analysis
-      - PING=1       # Socket proxy health checks
+      - CONTAINERS=1      # Container listing & telemetry reads
+      - POST=0            # GLOBAL BLOCK: Prevents unauthorized writes like /containers/create
+      - ALLOW_RESTARTS=1  # EXPLICIT ALLOW: Permits self-healing restarts for the circuit breaker
+      - INFO=1            # System stats
+      - EVENTS=1          # Real-time event monitoring
+      - LOGS=1            # Log stream access for AI Root Cause Analysis
+      - PING=1            # Socket proxy health checks
     ports:
       - "127.0.0.1:2375:2375"
     networks:
