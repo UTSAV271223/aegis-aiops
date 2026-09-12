@@ -13,8 +13,8 @@ class Settings:
     PORT: int = int(os.getenv("PORT", 8000))
     HOST: str = os.getenv("HOST", "0.0.0.0")
     
-    # JWT Auth Parameters
-    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "secret")
+    # JWT Auth Parameters (Updated to SECRET_KEY to prevent 500 errors)
+    SECRET_KEY: str = os.getenv("SECRET_KEY", "aegis_super_secret_jwt_key_2026_secure")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 60))
 
