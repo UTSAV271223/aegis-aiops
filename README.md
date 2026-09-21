@@ -1,3 +1,15 @@
+<div align="center">
+
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white)](https://aegis-aiops.vercel.app)
+[![Next.js](https://img.shields.io/badge/Next.js_14-000000?style=for-the-badge&logo=nextdotjs&logoColor=white)](https://nextjs.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![AWS](https://img.shields.io/badge/AWS_EC2-FF9900?style=for-the-badge&logo=amazonaws&logoColor=white)](https://aws.amazon.com/)
+[![Groq](https://img.shields.io/badge/Groq_LLM-F05032?style=for-the-badge&logo=git&logoColor=white)](https://groq.com/)
+
+</div>
+
+---
 # 🛡️ Aegis AIOps Command Center
 
 > **Enterprise-Grade Autonomous Infrastructure Monitoring, ML Anomaly Detection & Self-Healing Engine** > *100% Free-Tier Architecture ($0.00/mo) | < 3s Telemetry Latency | 3-Strike Circuit Breaker Protection*
