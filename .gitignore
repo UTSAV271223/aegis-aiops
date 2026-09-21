@@ -1,6 +1,19 @@
-*.tfstate
-*.tfstate.*
-.terraform/
-.env
-*.env
 venv/
+__pycache__/
+*.py[cod]
+
+# Next.js / Frontend Builds
+frontend/.next/
+frontend/node_modules/
+frontend/.env*
+
+# Terraform State & Local Cache
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.*
+infra/terraform-provider-*
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.env
