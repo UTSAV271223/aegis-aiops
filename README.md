@@ -17,7 +17,7 @@
 
 ## 🏗️ 4-Tier Enterprise Architecture
 
-![System Architecture Blueprint](./assets/architecture.png)
+![System Architecture Blueprint](./assets/architecture-diagram.png)
 
 | Tier | Component | Tech Stack | Operational Role |
 | :--- | :--- | :--- | :--- |
